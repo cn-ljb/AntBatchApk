@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="gbk"?>
+
+<project name="myApp" default="checkout">
+	<!-- 为了使用if，for，svn这几个Task而引入的, 前题是相关的jar包都已经拷备到了ant的lib目录下 -->
+	<taskdef resource="net/sf/antcontrib/antlib.xml"/>
+	<typedef resource="org/tigris/subversion/svnant/svnantlib.xml"/>
+	
+	<!--  导入所有的属性 -->
+	<property file="build.properties" />
+	<!-- 导入签名相关的数据 -->
+	<property file="keystore/keystore.properties"/>
+	
+	<!-- 用于生成apk的宏 -->
+	<macrodef name="generateApk">
+        <attribute name="newchannelID" />
+		<attribute name="timeformate"/>
+        <sequential>
+            <!-- 更改渠道号 -->
+			<!-- 把渠道号放在了文件里面 -->
+			<copyfile src="channel" dest="./${apkname}/assets/channel/channel" forceoverwrite="true"/>
+			<replace file="./${apkname}/assets/channel/channel" token="default" value="@{newchannelID}"/>
+
+			<!-- 生成apk -->
+			<exec dir="./apktool" executable="cmd">
+				<arg value="/c"/>
+				<arg value="apktool.bat"/>
+				<arg value="b"/>
+				<arg value="${basedir_unix}/${apkname}"/>
+			</exec>
+			
+			 <!--进行签名-->  
+			 <property name="out-unsigned-package" location="./${apkname}/dist/${apkname}.apk" />
+			 <property name="out-signed-package" location="./${apkname}/dist/app_signed.apk" />
+			 <property name="zipalign-package" location="./${apkname}/dist/app_zipalign.apk" />
+			 
+			 <exec executable="jarsigner" failonerror="true">  
+				<arg value="-verbose" />  
+				<arg value="-storepass" />  
+				<arg value="${local.key.store.password}" />  
+				<arg value="-keypass"/>
+				<arg value="${local.key.alias.password}"/>
+				<arg value="-keystore" />
+				<arg value="${local.key.store}" />
+				<arg value="-signedjar" />  
+				<arg value="${out-signed-package}" />  
+				<arg value="${out-unsigned-package}" />  
+				<arg value="${local.key.alias}"/>
+			</exec> 
+			
+			<!--进行优化 -->
+			<exec executable="zipalign" failonerror="true">  
+				<arg value="-v" />  
+				<arg value="-f" />  
+				<arg value="4" />  
+				<arg value="${out-signed-package}" />  
+				<arg value="${zipalign-package}" />  
+			</exec>
+				
+			<!-- 提取生成的apk到目录-->
+			<copyfile src="${zipalign-package}"
+				dest="./batchapk/${apkFileName}_@{newchannelID}.apk"
+				forceoverwrite="true"/>
+			<delete file="${out-signed-package}"/>
+			<delete file="${out-unsigned-package}"/>
+			<delete file="${zipalign-package}"/>
+        </sequential>
+    </macrodef>
+
+    <target name="checkout">
+		<!-- 当前的时间 -->
+		<tstamp>
+			<format property="nowtime" pattern="yyyyMMdd_HH.mm"/>
+		</tstamp>
+		
+		<!--当前的路径-->
+		<path id="wuba.path">
+			<pathelement location="${basedir}"/>
+		</path>
+		<pathconvert targetos="unix" property="basedir_unix" refid="wuba.path"/>
+		
+		<!-- 反编译 -->
+		<exec dir="./apktool" executable="cmd">
+			<arg value="/c"/>
+			<arg value="apktool.bat"/>
+			<arg value="d"/>
+			<arg value="${basedir_unix}/keystore/${apkname}.apk"/>
+			<arg value="-o"/>
+			<arg value="${basedir_unix}/${apkname}"/>
+		</exec>
+		
+		<!-- 循环批量生成apk -->
+		<if>
+			<equals arg1="${package_model}" arg2="0" />
+			<then>
+				<echo message="循环打包" />
+				<for param="i" begin="${min_channelID}" step="1" end="${max_channelID}">
+					<sequential>
+						<echo>for 循环 @{i}</echo>
+						
+						<generateApk newchannelID="@{i}" timeformate="${nowtime}"/>
+					</sequential>
+				</for>
+			</then>
+			<elseif>
+				<equals arg1="${package_model}" arg2="1" />
+				<then>
+					<echo message="遍例打包" />
+					<for list="${channelIDs}" param="i">
+						<sequential>
+							<echo>for 循环 @{i}</echo>
+						
+							<generateApk newchannelID="@{i}" timeformate="${nowtime}"/>
+						</sequential>
+					</for>
+				</then>
+			</elseif>
+		</if>
+		
+		<delete file="./${apkname}"/>
+		
+    </target>
+</project> 
+
